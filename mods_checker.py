@@ -9,11 +9,12 @@ import sys
 import click
 import psutil
 import requests
+from beaupy import select, select_multiple
 from halo import Halo
 from send2trash import send2trash
 
 from curseforge_api import get_minecraft_versions
-from utils import Color, SearchMethod, ModLoader
+from utils import Color, ModLoader, SearchMethod
 
 
 def diff_between_files(file1: str, file2: str) -> dict:
@@ -102,6 +103,19 @@ def download_file(url: str, fallback_name: str) -> tuple[bool, str | None]:
         return False, None
 
 
+def leave(error: bool = False, message: str = None, silent: bool = False):
+    """Exit the script."""
+    if error:
+        if not silent:
+            print(f"{Color.RED}{'An error occurred! Exiting.' if not message else message}{Color.RESET}",
+                  file=sys.stderr)
+        sys.exit(1)
+    else:
+        if not silent:
+            print(f"{Color.GREEN}{'Goodbye!' if not message else message}{Color.RESET}")
+        sys.exit(0)
+
+
 if __name__ == "__main__":
     # Check if the CURSEFORGE_API_KEY exists in .env
     if os.path.exists(".env"):
@@ -110,15 +124,12 @@ if __name__ == "__main__":
             if line.startswith("CURSEFORGE_API_KEY"):
                 env_key_found = True
                 if not line.split("=")[1].strip():
-                    print("Please provide a value for CURSEFORGE_API_KEY in .env")
-                    sys.exit(1)
+                    leave(True, "Please provide a value for CURSEFORGE_API_KEY in .env")
                 break
         if not env_key_found:
-            print("Please set the CURSEFORGE_API_KEY in .env")
-            sys.exit(1)
+            leave(True, "Please set the CURSEFORGE_API_KEY in .env")
     else:
-        print("Please create a .env file and set the CURSEFORGE_API_KEY")
-        sys.exit(1)
+        leave(True, "Please create a .env file and set the CURSEFORGE_API_KEY")
 
     # Start the script
     with contextlib.chdir(f"{os.getenv('APPDATA')}/.minecraft/mods"):
@@ -162,7 +173,6 @@ if __name__ == "__main__":
                 if first_words_before_number[-1] in ["fabric", "forge"] \
                 else first_words_before_number
             search_query = " ".join(query_without_loader)
-            key = search_query.lower().replace(" ", "-")
 
             # Search for the mod in CurseForge
             for search_method in SearchMethod:
@@ -196,7 +206,7 @@ if __name__ == "__main__":
             updates, updates_messages, updates_errors = check_for_updates(mods_map, current_version, current_mod_loader)
             if not updates:
                 spinner.succeed("No updates were found for your current mods")
-                sys.exit(0)
+                leave(False)
             spinner.info(f"Updates are available for {len(updates)} of your {len(mods)} current mods:\n\t"
                          + "\n\t".join(updates_messages) + (
                              f"\n  {Color.RED}The following errors occurred:\n\t"
@@ -204,8 +214,20 @@ if __name__ == "__main__":
                          ))
 
             # Ask the user whether to update the mods
-            if not click.confirm(f"Do you want to update {len(updates)} mods?", default=False):
-                sys.exit(0)
+            print(f"{Color.BLUE}>{Color.RESET} What do you want to do?")
+            match select(["Update all mods", "Update some mods", "Don't update any mods"], return_index=True):
+                case 1:
+                    # Ask the user which mods to update
+                    print(f"{Color.BLUE}>{Color.RESET} Select the mods to update:")
+                    selected_updates = select_multiple([f"{old} -> {new['fileName']}" for old, new in updates.items()],
+                                                       return_indices=True)
+                    if not selected_updates:
+                        leave(True, "Please select at least one mod to update")
+                    updates = {
+                        old: new for index, (old, new) in enumerate(updates.items()) if index in selected_updates
+                    }
+                case 2:
+                    leave(False)
 
             # Update the mods and send the old ones to the trash
             spinner = Halo(text=f"Updating your mods (0/{len(updates)})")
@@ -213,7 +235,7 @@ if __name__ == "__main__":
             update_failures = 0
             for index, (current_file, update_file) in enumerate(updates.items()):
                 download_success, _ = download_file(update_file["downloadUrl"], update_file["fileName"])
-                spinner_msg = f"Updating your mods ({index + 1}/{len(updates)})"
+                spinner_msg = f"Updating your mods ({index + 1}/{len(updates)}) - Done: {update_file['fileName']}"
                 if download_success:
                     send2trash(current_file)
                 else:
@@ -230,22 +252,22 @@ if __name__ == "__main__":
                 spinner.succeed(f"Updated {len(updates)} mods")
 
         else:  # Current version is not the latest
-            spinner = Halo(text=f"Minecraft {mc_versions[0]} is available, checking for mod updates for it")
+            spinner = Halo(text=f"Minecraft {mc_versions[0]} is available, checking for mod upgrades for it")
             spinner.start()
             # Check for updates of current mods
             new_versions, new_versions_messages, new_versions_errors = check_for_updates(mods_map, mc_versions[0],
                                                                                          current_mod_loader)
             if not new_versions:
                 spinner.fail("None of your mods are yet available for the latest Minecraft version")
-                sys.exit(0)
-            spinner.info(f"{len(new_versions)} of your {len(mods)} current mods have been updated for Minecraft "
+                leave(True, silent=True)
+            spinner.info(f"{len(new_versions)} of your {len(mods)} current mods have been upgraded for Minecraft "
                          + f"{mc_versions[0]}:\n\t" + "\n\t".join(new_versions_messages) + (
                              f"\n  {Color.RED}The following errors occurred:\n\t"
                              + "\n\t".join(new_versions_errors) + str(Color.RESET) if new_versions_errors else ""
                          ))
 
             # Ask the user whether to update the mods
-            if not click.confirm(f"Do you want to update {len(new_versions)} mods?", default=False):
+            if not click.confirm(f"Do you want to upgrade {len(new_versions)} mods?", default=False):
                 sys.exit(0)
 
             # Move the mods to a sub folder or trash
@@ -284,13 +306,13 @@ if __name__ == "__main__":
                         continue
                 if not fabric_installer_url:
                     spinner.fail("Failed to fetch the latest version of Fabric Installer")
-                    sys.exit(1)
+                    leave(True, silent=True)
 
                 # Download Fabric Installer
                 download_success, fabric_installer = download_file(fabric_installer_url, "fabric-installer.jar")
                 if not download_success:
                     spinner.fail("Failed to download Fabric Installer")
-                    sys.exit(1)
+                    leave(True, silent=True)
 
                 # Close the Minecraft launcher if it is running
                 # kill any running Minecraft processes
@@ -305,7 +327,7 @@ if __name__ == "__main__":
                     subprocess.run(["java", "-jar", fabric_installer])  # Assuming Java is installed and in PATH
                 except subprocess.CalledProcessError:
                     spinner.fail("Failed to run Fabric Installer")
-                    sys.exit(1)
+                    leave(True, silent=True)
                 send2trash(fabric_installer)
                 spinner.succeed("Fabric Installer ran successfully")
 

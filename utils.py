@@ -45,6 +45,9 @@ class Color(Enum):
     CYAN = "\033[36m"
     RESET = "\033[0m"
 
+    def __add__(self, other):
+        return self.value + (other.value if isinstance(other, Color) else other)
+
     def __str__(self):
         return self.value
 

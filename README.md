@@ -2,6 +2,8 @@
 
 Updates your local Minecraft mods.
 
+![Demo](demo/demo.gif)
+
 ## Features
 
 - Scan your mods folder and find the matching CurseForge page for each mod
@@ -9,13 +11,12 @@ Updates your local Minecraft mods.
 - Update your mods to the latest Minecraft version if any is available
 - Move your old mods to a backup folder (switching to a newer Minecraft version) or send them to the trash
 
-## Improvements
+## Planned improvements
 
 - Add support for other modding platforms
   - [x] CurseForge
   - [ ] Modrinth (as soon as we're able to download files from their API)
-- [ ] Add GitHub Actions pipeline for releases
-- [ ] Add demo GIF in README
+- Add GitHub Actions pipeline for releases?
 
 ## Configuration
 

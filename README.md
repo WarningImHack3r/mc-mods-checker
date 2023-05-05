@@ -3,6 +3,8 @@
 Updates your local Minecraft mods.
 
 ![Demo](demo/demo.gif)
+:---:
+*Demo of v1.0.1*
 
 ## Features
 

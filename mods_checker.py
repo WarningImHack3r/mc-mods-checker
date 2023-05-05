@@ -6,15 +6,17 @@ import shutil
 import subprocess
 import sys
 
-import click
 import psutil
 import requests
-from beaupy import select, select_multiple
+from beaupy import select, select_multiple, confirm
 from halo import Halo
 from send2trash import send2trash
 
 from curseforge_api import get_minecraft_versions
 from utils import Color, ModLoader, SearchMethod
+
+
+VERSION = "1.0.2"
 
 
 def diff_between_files(file1: str, file2: str) -> dict:
@@ -134,13 +136,15 @@ if __name__ == "__main__":
     # Start the script
     with contextlib.chdir(f"{os.getenv('APPDATA')}/.minecraft/mods"):
         mods = [mod for mod in os.listdir() if os.path.isfile(mod)]
+        if not mods:
+            leave(True, "No mods found in the mods folder")
         mc_versions = get_minecraft_versions()
         mc_versions.reverse()  # Sort from latest to oldest
 
         # Determine the current version and mod loader
         version_matches: dict[str, int] = {}
         mod_loader_matches: dict[ModLoader, int] = {}
-        spinner = Halo(text="Determining current version and mod loader")
+        spinner = Halo(text="Determining Minecraft version and mod loader")
         spinner.start()
         for mod in mods:
             mod_mod_loaders = [mod_loader for mod_loader in ModLoader if str(mod_loader) in mod.lower()]
@@ -151,19 +155,20 @@ if __name__ == "__main__":
                 if version in mod:
                     version_matches[version] = version_matches.get(version, 0) + 1
                     break
-        current_version = max(version_matches, key=version_matches.get)
+        current_mc_version = max(version_matches, key=version_matches.get)
         current_mod_loader = max(mod_loader_matches, key=mod_loader_matches.get)
-        spinner.succeed(f"Minecraft {Color.GREEN}{current_version}{Color.RESET} "
+        spinner.succeed(f"{Color.CYAN}mc-mods-checker v{VERSION}{Color.RESET} - "
+                        f"Minecraft {Color.GREEN}{current_mc_version}{Color.RESET} "
                         f"({Color.MAGENTA}{current_mod_loader.name()}{Color.RESET} Mod Loader)")
 
         # Map the mods to their CurseForge mod
         mods_map: dict[str, dict] = {}
         not_found_mods = []
-        spinner = Halo(text=f"Finding installed mods on CurseForge (0/{len(mods)})")
+        spinner = Halo(text=f"Finding installed mod{'s' if len(mods) > 1 else ''} on CurseForge (0/{len(mods)})")
         spinner.start()
         for index, mod in enumerate(mods):
             # Update the spinner
-            spinner.text = f"Finding installed mods on CurseForge ({index + 1}/{len(mods)})"
+            spinner.text = f"Finding installed mod{'s' if len(mods) > 1 else ''} on CurseForge ({index + 1}/{len(mods)})"
 
             # Build the query from the mod name
             split_mod = mod.replace("_", "-").split("-")
@@ -178,7 +183,7 @@ if __name__ == "__main__":
             for search_method in SearchMethod:
                 result = search_method.search(
                     search_query,
-                    ".".join(current_version.split(".")[:2]),  # Remove the patch version
+                    ".".join(current_mc_version.split(".")[:2]),  # Remove the patch version
                     current_mod_loader.value
                 )
                 if result:
@@ -191,23 +196,26 @@ if __name__ == "__main__":
         # Update the spinner according to the results
         if not_found_mods:
             if len(not_found_mods) == len(mods):
-                spinner.fail("No mods were found on CurseForge")
+                spinner.fail("No mods were found on CurseForge" if len(mods) > 1 else
+                             "Your mod was not found on CurseForge")
             else:
                 spinner.warn(f"{Color.YELLOW}Some mods were not found on CurseForge: "
                              f"{', '.join(not_found_mods)}{Color.RESET}")
         else:
-            spinner.succeed("All mods were found on CurseForge")
+            spinner.succeed("All mods were found on CurseForge" if len(mods) > 1 else
+                            "Your mod was found on CurseForge")
 
         # Act depending on whether the current version is the latest or not
-        if current_version == mc_versions[0]:  # Current version is the latest
+        if current_mc_version == mc_versions[0]:  # Current version is the latest
             spinner = Halo(text="Checking for mod updates for the current Minecraft version")
             spinner.start()
             # Check for updates of current mods
-            updates, updates_messages, updates_errors = check_for_updates(mods_map, current_version, current_mod_loader)
+            updates, updates_messages, updates_errors = check_for_updates(mods_map, current_mc_version, current_mod_loader)
             if not updates:
-                spinner.succeed("No updates were found for your current mods")
+                spinner.succeed(f"No update{'s were' if len(updates) > 1 else ' was'} found for your mod{'s' if len(mods) > 1 else ''}")
                 leave(False)
-            spinner.info(f"Updates are available for {len(updates)} of your {len(mods)} current mods:\n\t"
+            spinner.info(('Updates are' if len(updates) > 1 else 'An update is')
+                         + f" available for {len(updates)} of your {len(mods)} mod{'s' if len(mods) > 1 else ''}:\n\t"
                          + "\n\t".join(updates_messages) + (
                              f"\n  {Color.RED}The following errors occurred:\n\t"
                              + "\n\t".join(updates_errors) + str(Color.RESET) if updates_errors else ""
@@ -215,27 +223,34 @@ if __name__ == "__main__":
 
             # Ask the user whether to update the mods
             print(f"{Color.BLUE}>{Color.RESET} What do you want to do?")
-            match select(["Update all mods", "Update some mods", "Don't update any mods"], return_index=True):
-                case 1:
-                    # Ask the user which mods to update
-                    print(f"{Color.BLUE}>{Color.RESET} Select the mods to update:")
-                    selected_updates = select_multiple([f"{old} -> {new['fileName']}" for old, new in updates.items()],
-                                                       return_indices=True)
-                    if not selected_updates:
-                        leave(True, "Please select at least one mod to update")
-                    updates = {
-                        old: new for index, (old, new) in enumerate(updates.items()) if index in selected_updates
-                    }
-                case 2:
+            if len(mods) > 1:
+                if len(updates) > 1:  # Multiple mods to update
+                    match select(["Apply all updates", "Update only some mods", "Don't update any mod"], return_index=True):
+                        case 1:
+                            # Ask the user which mods to update
+                            print(f"{Color.BLUE}>{Color.RESET} Select the mods to update:")
+                            selected_updates = select_multiple([f"{old} -> {new['fileName']}" for old, new in updates.items()],
+                                                               return_indices=True)
+                            if not selected_updates:
+                                leave(True, "Please select at least one mod to update")
+                            updates = {
+                                old: new for index, (old, new) in enumerate(updates.items()) if index in selected_updates
+                            }
+                        case 2:
+                            leave(False)
+                elif not confirm("Do you want to apply the update?"):  # Multiple mods but only one to update
                     leave(False)
+            elif not confirm("Do you want to update your mod?"):  # Only one mod
+                leave(False)
 
             # Update the mods and send the old ones to the trash
-            spinner = Halo(text=f"Updating your mods (0/{len(updates)})")
+            spinner = Halo(text=f"Updating your mod{'s' if len(updates) > 1 else ''} (0/{len(updates)})")
             spinner.start()
             update_failures = 0
             for index, (current_file, update_file) in enumerate(updates.items()):
                 download_success, _ = download_file(update_file["downloadUrl"], update_file["fileName"])
-                spinner_msg = f"Updating your mods ({index + 1}/{len(updates)}) - Done: {update_file['fileName']}"
+                spinner_msg = f"Updating your mod{'s' if len(updates) > 1 else ''} ({index + 1}/{len(updates)}) " \
+                              f"- Done: {update_file['fileName']}"
                 if download_success:
                     send2trash(current_file)
                 else:
@@ -245,47 +260,56 @@ if __name__ == "__main__":
                 spinner.text = spinner_msg
             if update_failures:
                 if update_failures == len(updates):
-                    spinner.fail(f"Failed to update {update_failures} mods")
+                    spinner.fail(f"Failed to update {update_failures} mod{'s' if len(update_failures) > 1 else ''}")
                 else:
-                    spinner.warn(f"Updated {len(updates) - update_failures} mods, {update_failures} failed")
+                    spinner.warn(f"Updated {len(updates) - update_failures} mod{'s' if len(updates) - update_failures > 1 else ''}," +
+                                 f"{update_failures} failed")
             else:
-                spinner.succeed(f"Updated {len(updates)} mods")
+                spinner.succeed(f"Updated {len(updates)} mod{'s' if len(updates) > 1 else ''}")
 
         else:  # Current version is not the latest
-            spinner = Halo(text=f"Minecraft {mc_versions[0]} is available, checking for mod upgrades for it")
+            spinner = Halo(text=f"Minecraft {mc_versions[0]} is available, checking for mod upgrade{'s' if len(mods) > 1 else ''} for it")
             spinner.start()
             # Check for updates of current mods
             new_versions, new_versions_messages, new_versions_errors = check_for_updates(mods_map, mc_versions[0],
                                                                                          current_mod_loader)
             if not new_versions:
-                spinner.fail("None of your mods are yet available for the latest Minecraft version")
+                spinner.fail(("None of your mods are" if len(mods) > 1 else "You mod isn't")
+                             + f" yet available for the latest Minecraft version ({mc_versions[0]})")
                 leave(True, silent=True)
-            spinner.info(f"{len(new_versions)} of your {len(mods)} current mods have been upgraded for Minecraft "
-                         + f"{mc_versions[0]}:\n\t" + "\n\t".join(new_versions_messages) + (
+            if len(new_versions) == len(mods):
+                if len(mods) > 1:
+                    updates_summary = "All your mods are"
+                else:
+                    updates_summary = "Your mod is"
+            else:
+                updates_summary = f"{len(new_versions)} of your {len(mods)} mods are"
+            spinner.info(updates_summary + f" available for Minecraft {mc_versions[0]}:\n\t"
+                         + "\n\t".join(new_versions_messages) + (
                              f"\n  {Color.RED}The following errors occurred:\n\t"
                              + "\n\t".join(new_versions_errors) + str(Color.RESET) if new_versions_errors else ""
                          ))
 
             # Ask the user whether to update the mods
-            if not click.confirm(f"Do you want to upgrade {len(new_versions)} mods?", default=False):
+            if not confirm(f"Do you want to upgrade {len(new_versions)} mod{'s' if len(new_versions) > 1 else ''}?"):
                 sys.exit(0)
 
             # Move the mods to a sub folder or trash
             stores_previous_versions = [folder for folder in os.listdir()
                                         if os.path.isdir(folder) and folder in mc_versions]
             if stores_previous_versions:
-                spinner = Halo(text="Moving your current mods to their sub folder")
+                spinner = Halo(text=f"Moving your mod{'s' if len(mods) > 1 else ''} to their sub folder")
                 spinner.start()
-                os.mkdir(current_version)
+                os.mkdir(current_mc_version)
                 for mod in mods:
-                    shutil.move(mod, current_version)
-                spinner.succeed(f"Moved {len(mods)} mods to the {current_version} sub folder")
+                    shutil.move(mod, current_mc_version)
+                spinner.succeed(f"Moved {len(mods)} mod{'s' if len(mods) > 1 else ''} to the {current_mc_version} sub folder")
             else:
-                spinner = Halo(text="Moving your current mods to trash")
+                spinner = Halo(text=f"Moving your mod{'s' if len(mods) > 1 else ''} to trash")
                 spinner.start()
                 for mod in mods:
                     send2trash(mod)
-                spinner.succeed(f"Moved {len(mods)} mods to trash")
+                spinner.succeed(f"Moved {len(mods)} mod{'s' if len(mods) > 1 else ''} to trash")
 
             # If Fabric, download fabric.exe and run it
             if current_mod_loader == ModLoader.FABRIC:
@@ -332,12 +356,12 @@ if __name__ == "__main__":
                 spinner.succeed("Fabric Installer ran successfully")
 
             # Download mods for the latest version
-            spinner = Halo(text=f"Downloading {len(new_versions)} mods for Minecraft {mc_versions[0]}")
+            spinner = Halo(text=f"Downloading {len(new_versions)} mod{'s' if len(new_versions) > 1 else ''} for Minecraft {mc_versions[0]}")
             spinner.start()
             download_failures = 0
             for index, (current_file, update_file) in enumerate(new_versions.items()):
                 download_success, _ = download_file(update_file["downloadUrl"], update_file["fileName"])
-                spinner_msg = f"Downloading {len(new_versions)} mods for Minecraft {mc_versions[0]} ({index + 1}/" \
+                spinner_msg = f"Downloading {len(new_versions)} mod{'s' if len(new_versions) > 1 else ''} for Minecraft {mc_versions[0]} ({index + 1}/" \
                               + f"{len(new_versions)})"
                 if not download_success:
                     download_failures += 1
@@ -346,8 +370,8 @@ if __name__ == "__main__":
                 spinner.text = spinner_msg
             if download_failures:
                 if download_failures == len(new_versions):
-                    spinner.fail(f"Failed to download {download_failures} mods")
+                    spinner.fail(f"Failed to download {download_failures} mod{'s' if download_failures > 1 else ''}")
                 else:
-                    spinner.warn(f"Downloaded {len(new_versions) - download_failures} mods, {download_failures} failed")
+                    spinner.warn(f"Downloaded {len(new_versions) - download_failures} mod{'s' if len(new_versions) - download_failures > 1 else ''}, {download_failures} failed")
             else:
-                spinner.succeed(f"Downloaded {len(new_versions)} mods")
+                spinner.succeed(f"Downloaded {len(new_versions)} mod{'s' if len(new_versions) > 1 else ''}")

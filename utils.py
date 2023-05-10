@@ -4,6 +4,7 @@ from enum import Enum
 import enchant
 
 from curseforge_api import search_mod
+from modrinth_api import search_mod as search_mod_modrinth, get_files_for_mod
 
 
 class ModLoader(Enum):
@@ -52,12 +53,19 @@ class Color(Enum):
         return self.value
 
 
+class SearchWebsite(Enum):
+    """Enum for the different search websites."""
+    MODRINTH = "Modrinth"
+    CURSEFORGE = "Curseforge"
+
+
 class SearchMethod(Enum):
     """Enum for the different search methods."""
-    SLUG = "Slug"
-    QUERY = "Query"
-    SPACED_SLUG = "Slug with spaces"
-    SPACED_QUERY = "Query with spaces"
+    MODRINTH_QUERY = "Modrinth (query)"
+    CURSEFORGE_SLUG = "Curseforge (slug)"
+    CURSEFORGE_QUERY = "Curseforge (query)"
+    CURSEFORGE_SPACED_SLUG = "Curseforge (slug with spaces)"
+    CURSEFORGE_SPACED_QUERY = "Curseforge (query with spaces)"
 
     @staticmethod
     def __add_spaces_from_uppercase(text: str):
@@ -113,53 +121,65 @@ class SearchMethod(Enum):
             if result_first_words == mod_name.lower():
                 return result
 
-    def search(self, name: str, version: str, mod_loader: int) -> dict | None:
+    def search(self, name: str, version: str, mod_loader: ModLoader) -> dict | None:
         """Return the mod that matches the name and version using the search method."""
         query = self.__add_spaces_from_uppercase(name) \
-            if self == SearchMethod.SLUG or self == SearchMethod.QUERY \
+            if self == SearchMethod.CURSEFORGE_SLUG or self == SearchMethod.CURSEFORGE_QUERY \
             else self.__add_spaces_from_dictionary(name)
         match self:
-            case SearchMethod.SLUG:
+            case SearchMethod.MODRINTH_QUERY:
+                search = search_mod_modrinth(
+                    version=version,
+                    mod_loader=mod_loader.name().lower(),
+                    query=name
+                )
+                if search:
+                    first_result = search[0]
+                    files = get_files_for_mod(first_result["slug"], version, mod_loader.name().lower())
+                    return {**first_result, "files": [file for sublist in files for file in sublist]}
+            case SearchMethod.CURSEFORGE_SLUG:
                 search = search_mod(
                     version=version,
-                    mod_loader=mod_loader,
+                    mod_loader=mod_loader.value,
                     slug=query.lower().replace(" ", "-")
                 )
                 if search:
                     return search[0]
-            case SearchMethod.QUERY:
+            case SearchMethod.CURSEFORGE_QUERY:
                 search = search_mod(
                     version=version,
-                    mod_loader=mod_loader,
+                    mod_loader=mod_loader.value,
                     query=query
                 )
                 if search:
                     return self.__find_closest_match(search, name)
-            case SearchMethod.SPACED_SLUG:
+            case SearchMethod.CURSEFORGE_SPACED_SLUG:
                 search = search_mod(
                     version=version,
-                    mod_loader=mod_loader,
+                    mod_loader=mod_loader.value,
                     slug=query.lower().replace(" ", "-")
                 )
                 if search:
                     return search[0]
-            case SearchMethod.SPACED_QUERY:
+            case SearchMethod.CURSEFORGE_SPACED_QUERY:
                 search = search_mod(
                     version=version,
-                    mod_loader=mod_loader,
+                    mod_loader=mod_loader.value,
                     query=query
                 )
                 if search:
                     return self.__find_closest_match(search, query)
 
     def color(self):
-        """Return the color associated with the search method."""
+        """Return the color associated with the search method. Used for debugging."""
         match self:
-            case SearchMethod.SLUG:
+            case SearchMethod.MODRINTH_QUERY:
+                return Color.RED
+            case SearchMethod.CURSEFORGE_SLUG:
                 return Color.BLUE
-            case SearchMethod.QUERY:
+            case SearchMethod.CURSEFORGE_QUERY:
                 return Color.GREEN
-            case SearchMethod.SPACED_SLUG:
+            case SearchMethod.CURSEFORGE_SPACED_SLUG:
                 return Color.MAGENTA
-            case SearchMethod.SPACED_QUERY:
+            case SearchMethod.CURSEFORGE_SPACED_QUERY:
                 return Color.CYAN

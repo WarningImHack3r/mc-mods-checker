@@ -13,10 +13,9 @@ from halo import Halo
 from send2trash import send2trash
 
 from curseforge_api import get_minecraft_versions
-from utils import Color, ModLoader, SearchMethod
+from utils import Color, ModLoader, SearchMethod, SearchWebsite
 
-
-VERSION = "1.0.2"
+VERSION = "1.1.0"
 
 
 def diff_between_files(file1: str, file2: str) -> dict:
@@ -50,34 +49,45 @@ def check_for_updates(map_of_mods: dict[str, dict], mc_version: str, mod_loader:
     _updates_errors: [str] = []
     # Loop through the mods map
     for local_file, mod in map_of_mods.items():
-        # Filter out the latest file for the current Minecraft version
-        available_files = [file for file in mod["latestFiles"] if file["isAvailable"]]
-        files = [file for file in available_files if mc_version in file["gameVersions"]]
+        # Get the origin website to adapt the algorithm
+        if "latestFiles" in mod:
+            website = SearchWebsite.CURSEFORGE
+            valid = [file for file in mod["latestFiles"] if file["isAvailable"] and mc_version in file["gameVersions"]]
+            files = sorted(valid, key=lambda file: file["fileDate"], reverse=True)
+        else:
+            website = SearchWebsite.MODRINTH
+            files = mod["files"]
         # Handle errors
-        if not available_files:
-            _updates_errors.append(f"{mod['name']}: No available file found, please check manually at "
-                                   + mod['links']['websiteUrl'])
-            continue
-        elif not files:
-            _updates_errors.append(f"{mod['name']}: No file found for {mc_version}, please check and download manually "
-                                   + "at " + mod['links']['websiteUrl'])
+        if not files:
+            _updates_errors.append(f"{mod['name'] if website == SearchWebsite.CURSEFORGE else mod['title']}: "
+                                   + f"No file found for {mc_version}, please check and download manually "
+                                   + (
+                                       f"at {mod['links']['websiteUrl']}" if website == SearchWebsite.CURSEFORGE
+                                       else "on Modrinth"
+                                   ))
             continue
         # Check for updates
         for file in files:
-            file_mod_loaders = [mod_loader for mod_loader in ModLoader if str(mod_loader) in file["fileName"].lower()]
-            # Continue only if the mod loader is the same or if the file doesn't have a mod loader
-            if file_mod_loaders:
-                file_mod_loader = file_mod_loaders[0]
-                if file_mod_loader != mod_loader:
-                    continue
-            if file["fileName"] == local_file:
-                continue
+            if website == SearchWebsite.CURSEFORGE:
+                file_mod_loaders = [mod_loader for mod_loader in ModLoader if str(mod_loader) in file["fileName"].lower()]
+                # Continue only if the mod loader is the same or if the file doesn't have a mod loader
+                if file_mod_loaders:
+                    file_mod_loader = file_mod_loaders[0]
+                    if file_mod_loader != mod_loader:
+                        continue
+            filename = file["fileName"] if website == SearchWebsite.CURSEFORGE else file["filename"]
+            if filename == local_file:
+                break
             # Check if the file is different
-            files_diff = diff_between_files(local_file, file["fileName"])
-            if files_diff:
-                _updates[local_file] = file
-                _updates_messages.append(f"{mod['name']}: {Color.YELLOW}{local_file}{Color.RESET} -> "
-                                         f"{Color.GREEN}{file['fileName']}{Color.RESET}")
+            if diff_between_files(local_file, filename):
+                _updates[local_file] = {
+                    "fileName": filename,
+                    "downloadUrl": file["downloadUrl"] if website == SearchWebsite.CURSEFORGE else file["url"],
+                }
+                _updates_messages.append(f"{mod['name'] if website == SearchWebsite.CURSEFORGE else mod['title']}: "
+                                         + f"{Color.YELLOW}{local_file}{Color.RESET} -> "
+                                         + f"{Color.GREEN}{filename}{Color.RESET}")
+                break
     return _updates, _updates_messages, _updates_errors
 
 
@@ -161,14 +171,16 @@ if __name__ == "__main__":
                         f"Minecraft {Color.GREEN}{current_mc_version}{Color.RESET} "
                         f"({Color.MAGENTA}{current_mod_loader.name()}{Color.RESET} Mod Loader)")
 
-        # Map the mods to their CurseForge mod
+        # Map the mods to their CurseForge/Modrinth mod
         mods_map: dict[str, dict] = {}
         not_found_mods = []
-        spinner = Halo(text=f"Finding installed mod{'s' if len(mods) > 1 else ''} on CurseForge (0/{len(mods)})")
+        spinner = Halo(
+            text=f"Finding installed mod{'s' if len(mods) > 1 else ''} on CurseForge and Modrinth (0/{len(mods)})"
+        )
         spinner.start()
         for index, mod in enumerate(mods):
             # Update the spinner
-            spinner.text = f"Finding installed mod{'s' if len(mods) > 1 else ''} on CurseForge ({index + 1}/{len(mods)})"
+            spinner.text = f"Finding installed mod{'s' if len(mods) > 1 else ''} on CurseForge and Modrinth ({index + 1}/{len(mods)})"
 
             # Build the query from the mod name
             split_mod = mod.replace("_", "-").split("-")
@@ -183,8 +195,8 @@ if __name__ == "__main__":
             for search_method in SearchMethod:
                 result = search_method.search(
                     search_query,
-                    ".".join(current_mc_version.split(".")[:2]),  # Remove the patch version
-                    current_mod_loader.value
+                    current_mc_version,
+                    current_mod_loader
                 )
                 if result:
                     mods_map[mod] = result
@@ -196,23 +208,32 @@ if __name__ == "__main__":
         # Update the spinner according to the results
         if not_found_mods:
             if len(not_found_mods) == len(mods):
-                spinner.fail("No mods were found on CurseForge" if len(mods) > 1 else
-                             "Your mod was not found on CurseForge")
+                spinner.fail("No mods were found on CurseForge nor Modrinth" if len(mods) > 1 else
+                             "Your mod was not found on CurseForge nor Modrinth")
+            elif len(not_found_mods) == 1:
+                if len(mods) > 1:
+                    spinner.warn(f"{Color.YELLOW}1 mod was not found on CurseForge nor Modrinth: "
+                                 f"{not_found_mods[0]}{Color.RESET}")
+                else:
+                    spinner.warn(f"{Color.YELLOW}Your mod was not found on CurseForge nor Modrinth{Color.RESET}")
             else:
-                spinner.warn(f"{Color.YELLOW}Some mods were not found on CurseForge: "
+                spinner.warn(f"{Color.YELLOW}{len(not_found_mods)} mods were not found on CurseForge nor Modrinth: "
                              f"{', '.join(not_found_mods)}{Color.RESET}")
         else:
-            spinner.succeed("All mods were found on CurseForge" if len(mods) > 1 else
-                            "Your mod was found on CurseForge")
+            spinner.succeed("All mods were found on CurseForge and Modrinth" if len(mods) > 1 else
+                            "Your mod was found on CurseForge and Modrinth")
 
         # Act depending on whether the current version is the latest or not
         if current_mc_version == mc_versions[0]:  # Current version is the latest
             spinner = Halo(text="Checking for mod updates for the current Minecraft version")
             spinner.start()
             # Check for updates of current mods
-            updates, updates_messages, updates_errors = check_for_updates(mods_map, current_mc_version, current_mod_loader)
+            updates, updates_messages, updates_errors = check_for_updates(mods_map, current_mc_version,
+                                                                          current_mod_loader)
             if not updates:
-                spinner.succeed(f"No update{'s were' if len(updates) > 1 else ' was'} found for your mod{'s' if len(mods) > 1 else ''}")
+                spinner.succeed(
+                    f"No update{'s were' if len(updates) > 1 else ' was'} found for your mod{'s' if len(mods) > 1 else ''}"
+                )
                 leave(False)
             spinner.info(('Updates are' if len(updates) > 1 else 'An update is')
                          + f" available for {len(updates)} of your {len(mods)} mod{'s' if len(mods) > 1 else ''}:\n\t"
@@ -225,16 +246,20 @@ if __name__ == "__main__":
             print(f"{Color.BLUE}>{Color.RESET} What do you want to do?")
             if len(mods) > 1:
                 if len(updates) > 1:  # Multiple mods to update
-                    match select(["Apply all updates", "Update only some mods", "Don't update any mod"], return_index=True):
+                    match select(["Apply all updates", "Update only some mods", "Don't update any mod"],
+                                 return_index=True):
                         case 1:
                             # Ask the user which mods to update
                             print(f"{Color.BLUE}>{Color.RESET} Select the mods to update:")
-                            selected_updates = select_multiple([f"{old} -> {new['fileName']}" for old, new in updates.items()],
-                                                               return_indices=True)
+                            selected_updates = select_multiple(
+                                [f"{old} -> {new['fileName']}" for old, new in updates.items()],
+                                return_indices=True
+                            )
                             if not selected_updates:
                                 leave(True, "Please select at least one mod to update")
                             updates = {
-                                old: new for index, (old, new) in enumerate(updates.items()) if index in selected_updates
+                                old: new for index, (old, new) in enumerate(updates.items()) if
+                                index in selected_updates
                             }
                         case 2:
                             leave(False)
@@ -260,15 +285,19 @@ if __name__ == "__main__":
                 spinner.text = spinner_msg
             if update_failures:
                 if update_failures == len(updates):
-                    spinner.fail(f"Failed to update {update_failures} mod{'s' if len(update_failures) > 1 else ''}")
+                    spinner.fail(f"Failed to update {update_failures} mod{'s' if update_failures > 1 else ''}")
                 else:
-                    spinner.warn(f"Updated {len(updates) - update_failures} mod{'s' if len(updates) - update_failures > 1 else ''}," +
-                                 f"{update_failures} failed")
+                    spinner.warn(
+                        f"Updated {len(updates) - update_failures} mod{'s' if len(updates) - update_failures > 1 else ''}," +
+                        f"{update_failures} failed"
+                    )
             else:
                 spinner.succeed(f"Updated {len(updates)} mod{'s' if len(updates) > 1 else ''}")
 
         else:  # Current version is not the latest
-            spinner = Halo(text=f"Minecraft {mc_versions[0]} is available, checking for mod upgrade{'s' if len(mods) > 1 else ''} for it")
+            spinner = Halo(
+                text=f"Minecraft {mc_versions[0]} is available, checking for mod upgrade{'s' if len(mods) > 1 else ''} for it"
+            )
             spinner.start()
             # Check for updates of current mods
             new_versions, new_versions_messages, new_versions_errors = check_for_updates(mods_map, mc_versions[0],
@@ -303,7 +332,9 @@ if __name__ == "__main__":
                 os.mkdir(current_mc_version)
                 for mod in mods:
                     shutil.move(mod, current_mc_version)
-                spinner.succeed(f"Moved {len(mods)} mod{'s' if len(mods) > 1 else ''} to the {current_mc_version} sub folder")
+                spinner.succeed(
+                    f"Moved {len(mods)} mod{'s' if len(mods) > 1 else ''} to the {current_mc_version} sub folder"
+                )
             else:
                 spinner = Halo(text=f"Moving your mod{'s' if len(mods) > 1 else ''} to trash")
                 spinner.start()
@@ -356,7 +387,9 @@ if __name__ == "__main__":
                 spinner.succeed("Fabric Installer ran successfully")
 
             # Download mods for the latest version
-            spinner = Halo(text=f"Downloading {len(new_versions)} mod{'s' if len(new_versions) > 1 else ''} for Minecraft {mc_versions[0]}")
+            spinner = Halo(
+                text=f"Downloading {len(new_versions)} mod{'s' if len(new_versions) > 1 else ''} for Minecraft {mc_versions[0]}"
+            )
             spinner.start()
             download_failures = 0
             for index, (current_file, update_file) in enumerate(new_versions.items()):
@@ -372,6 +405,8 @@ if __name__ == "__main__":
                 if download_failures == len(new_versions):
                     spinner.fail(f"Failed to download {download_failures} mod{'s' if download_failures > 1 else ''}")
                 else:
-                    spinner.warn(f"Downloaded {len(new_versions) - download_failures} mod{'s' if len(new_versions) - download_failures > 1 else ''}, {download_failures} failed")
+                    spinner.warn(
+                        f"Downloaded {len(new_versions) - download_failures} mod{'s' if len(new_versions) - download_failures > 1 else ''}, {download_failures} failed"
+                    )
             else:
                 spinner.succeed(f"Downloaded {len(new_versions)} mod{'s' if len(new_versions) > 1 else ''}")

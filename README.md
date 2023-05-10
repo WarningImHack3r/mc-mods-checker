@@ -13,13 +13,6 @@ Updates your local Minecraft mods.
 - Update your mods to the latest Minecraft version if any is available
 - Move your old mods to a backup folder (switching to a newer Minecraft version) or send them to the trash
 
-## Planned improvements
-
-- Add support for other modding platforms
-  - [x] CurseForge
-  - [ ] Modrinth (as soon as we're able to download files from their API)
-- Add GitHub Actions pipeline for releases?
-
 ## Configuration
 
 You need a CurseForge API key to use this script. You can get one [here](https://console.curseforge.com/#/api-keys). Simply create an account, give your organization a name and copy the key alongside the script in a file named `.env`.
@@ -37,3 +30,7 @@ $ cd mc-mods-checker
 $ pip install -r requirements.txt
 $ python3 mods_checker.py  # Requires Python 3.11+
 ```
+
+## Issues
+
+If you encounter any issue, **especially** if it's a mismatch between an _unmodified_ mod file and its online page, please open an issue on this repo.

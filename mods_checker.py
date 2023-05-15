@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+from urllib.parse import unquote
 
 import psutil
 import requests
@@ -102,11 +103,14 @@ def download_file(url: str, fallback_name: str) -> tuple[bool, str | None]:
         with requests.get(url) as dl_response:
             file_name = fallback_name
             if "Content-Disposition" in dl_response.headers.keys():
-                file_name = re.findall("filename=(.+)", dl_response.headers["Content-Disposition"])[0]
+                matches = re.findall("filename=(.+)", dl_response.headers["Content-Disposition"])
+                if matches and len(matches) > 0:
+                    file_name = matches[0]
             else:
                 url_name = url.split("/")[-1]
                 if url_name:
                     file_name = url_name
+            file_name = unquote(file_name)
 
             with open(file_name, "xb") as file:
                 file.write(dl_response.content)

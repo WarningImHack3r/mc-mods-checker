@@ -16,7 +16,7 @@ from send2trash import send2trash
 from curseforge_api import get_minecraft_versions
 from utils import Color, ModLoader, SearchMethod, SearchWebsite
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 
 def diff_between_files(file1: str, file2: str) -> dict:

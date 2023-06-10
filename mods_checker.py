@@ -1,10 +1,10 @@
 """This script checks for updates of your mods for the current Minecraft version."""
+import contextlib
 import os
 import re
 import shutil
 import subprocess
 import sys
-import contextlib
 from urllib.parse import unquote
 
 import psutil

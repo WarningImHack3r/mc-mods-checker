@@ -1,7 +1,7 @@
 halo~=0.0.31
 pyenchant~=3.2.2
 python-dotenv~=1.0.0
-requests~=2.30.0
+requests~=2.31.0
 Send2Trash~=1.8.2
 psutil~=5.9.5
 beaupy~=3.5.4

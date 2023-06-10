@@ -1,10 +1,10 @@
 """This script checks for updates of your mods for the current Minecraft version."""
-from contextlib import chdir, contextmanager, redirect_stderr, redirect_stdout
 import os
 import re
 import shutil
 import subprocess
 import sys
+import contextlib
 from urllib.parse import unquote
 
 import psutil
@@ -17,14 +17,6 @@ from curseforge_api import get_minecraft_versions
 from utils import Color, ModLoader, SearchMethod, SearchWebsite
 
 VERSION = "1.1.2"
-
-
-@contextmanager
-def silent():
-    """Silence the output."""
-    with open(os.devnull, "w") as f:
-        with redirect_stderr(f) as err, redirect_stdout(f) as out:
-            yield err, out
 
 
 def diff_between_files(file1: str, file2: str) -> dict:
@@ -62,7 +54,8 @@ def check_for_updates(map_of_mods: dict[str, dict], current_version: str, target
         # Get the origin website to adapt the algorithm
         if "latestFiles" in mod:
             website = SearchWebsite.CURSEFORGE
-            valid = [file for file in mod["latestFiles"] if file["isAvailable"] and target_version in file["gameVersions"]]
+            valid = [file for file in mod["latestFiles"]
+                     if file["isAvailable"] and target_version in file["gameVersions"]]
             files = sorted(valid, key=lambda file: file["fileDate"], reverse=True)
         else:
             website = SearchWebsite.MODRINTH
@@ -79,14 +72,15 @@ def check_for_updates(map_of_mods: dict[str, dict], current_version: str, target
         # Check for updates
         for file in files:
             if website == SearchWebsite.CURSEFORGE:
-                file_mod_loaders = [mod_loader for mod_loader in ModLoader if str(mod_loader) in file["fileName"].lower()]
+                file_mod_loaders = [mod_loader for mod_loader in ModLoader
+                                    if str(mod_loader) in file["fileName"].lower()]
                 # Continue only if the mod loader is the same or if the file doesn't have a mod loader
                 if file_mod_loaders:
                     file_mod_loader = file_mod_loaders[0]
                     if file_mod_loader != mod_loader:
                         continue
             filename = file["fileName"] if website == SearchWebsite.CURSEFORGE else file["filename"]
-            if filename == local_file:
+            if filename == local_file or not filename.startswith(local_file.split("-")[0]):
                 break
             # Check if the file is different
             if diff_between_files(local_file, filename):
@@ -157,7 +151,7 @@ if __name__ == "__main__":
         leave(True, "Please create a .env file and set the CURSEFORGE_API_KEY")
 
     # Start the script
-    with chdir(f"{os.getenv('APPDATA')}/.minecraft/mods"):
+    with contextlib.chdir(f"{os.getenv('APPDATA')}/.minecraft/mods"):
         mods = [mod for mod in os.listdir() if os.path.isfile(mod)]
         if not mods:
             leave(True, "No mods found in the mods folder")
@@ -323,7 +317,8 @@ if __name__ == "__main__":
             spinner.start()
             # Check for updates of current mods
             new_versions, new_versions_messages, new_versions_errors = check_for_updates(mods_map, current_mc_version,
-                                                                                         mc_versions[0], current_mod_loader)
+                                                                                         mc_versions[0],
+                                                                                         current_mod_loader)
             if not new_versions:
                 spinner.fail(("None of your mods are" if len(mods) > 1 else "You mod isn't")
                              + f" yet available for the latest Minecraft version ({mc_versions[0]})")
@@ -358,7 +353,9 @@ if __name__ == "__main__":
                             if not selected_upgrades:
                                 leave(True, "Please select at least one mod to upgrade")
                             skipped_upgrades = [old for index, (old, _) in enumerate(new_versions.items())
-                                                if index not in selected_upgrades]
+                                                if index not in selected_upgrades] + [m for m in mods
+                                                                                      if m not in [old for old, _ in new_versions.items()]
+                                                                                      and m not in skipped_upgrades]
                             new_versions = {
                                 old: new for index, (old, new) in enumerate(new_versions.items()) if
                                 index in selected_upgrades
@@ -423,6 +420,7 @@ if __name__ == "__main__":
                 if not download_success:
                     spinner.fail("Failed to download Fabric Installer")
                     leave(True, silent=True)
+                spinner.succeed("Fabric Installer downloaded successfully")
 
                 # Close the Minecraft launcher if it is running
                 # kill any running Minecraft processes
@@ -434,8 +432,11 @@ if __name__ == "__main__":
                 spinner = Halo(text="Running Fabric Installer, please proceed with the installation and then close it")
                 spinner.start()
                 try:
-                    with silent():
-                        subprocess.run(["java", "-jar", fabric_installer])  # Assuming Java is installed and in PATH
+                    subprocess.run(
+                        ["java", "-jar", fabric_installer],  # Assuming Java is installed and in PATH
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
                 except subprocess.CalledProcessError as e:
                     spinner.fail(f"Failed to run Fabric Installer: {e}")
                     leave(True)

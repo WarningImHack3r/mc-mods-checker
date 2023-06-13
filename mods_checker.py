@@ -16,7 +16,7 @@ from send2trash import send2trash
 from curseforge_api import get_minecraft_versions
 from utils import Color, ModLoader, SearchMethod, SearchWebsite
 
-VERSION = "1.1.2"
+VERSION = "1.1.3"
 
 
 def diff_between_files(file1: str, file2: str) -> dict:
@@ -159,7 +159,7 @@ if __name__ == "__main__":
         mc_versions.reverse()  # Sort from latest to oldest
 
         # Determine the current version and mod loader
-        version_matches: dict[str, int] = {}
+        current_mc_version = None
         mod_loader_matches: dict[ModLoader, int] = {}
         spinner = Halo(text="Determining Minecraft version and mod loader")
         spinner.start()
@@ -169,10 +169,11 @@ if __name__ == "__main__":
                 mod_mod_loader = mod_mod_loaders[0]
                 mod_loader_matches[mod_mod_loader] = mod_loader_matches.get(mod_mod_loader, 0) + 1
             for version in mc_versions:
-                if version in mod:
-                    version_matches[version] = version_matches.get(version, 0) + 1
+                if version in mod and (
+                        current_mc_version is None or mc_versions.index(current_mc_version) > mc_versions.index(version)
+                ):
+                    current_mc_version = version
                     break
-        current_mc_version = max(version_matches, key=version_matches.get)
         current_mod_loader = max(mod_loader_matches, key=mod_loader_matches.get)
         spinner.succeed(f"{Color.CYAN}mc-mods-checker v{VERSION}{Color.RESET} - "
                         f"Minecraft {Color.GREEN}{current_mc_version}{Color.RESET} "
@@ -373,7 +374,8 @@ if __name__ == "__main__":
             if stores_previous_versions:
                 spinner = Halo(text=f"Moving your mod{'s' if len(mods) > 1 else ''} to {'their' if len(mods) > 1 else 'its'} sub folder")
                 spinner.start()
-                os.mkdir(current_mc_version)
+                if current_mc_version not in stores_previous_versions:
+                    os.mkdir(current_mc_version)
                 for mod in mods:
                     shutil.move(mod, current_mc_version)
                 spinner.succeed(

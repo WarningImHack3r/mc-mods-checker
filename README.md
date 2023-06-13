@@ -34,3 +34,6 @@ $ python3 mods_checker.py  # Requires Python 3.11+
 ## Issues
 
 If you encounter any issue, **especially** if it's a mismatch between an _unmodified_ mod file and its online page, please open an issue on this repo.
+
+## TODO
+- [ ] Change mod online detection mechanism to use current mod version instead of target version

@@ -38,3 +38,4 @@ If you encounter any issue, **especially** if it's a mismatch between an _unmodi
 ## TODO
 - [ ] Change mod online detection mechanism to use current mod version instead of target version
 - [ ] Only work with Modrinth if no API key is provided
+- [ ] Auto install Fabric option (with `.jar` version & `java -jar fabric-installer.jar client -dir "/path/to/.minecraft"`)

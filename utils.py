@@ -1,7 +1,11 @@
 """Utility functions and classes."""
+import inspect
+import os.path
+import sys
 from enum import Enum
 
 import enchant
+import requests
 
 from curseforge_api import search_mod
 from modrinth_api import search_mod as search_mod_modrinth, get_files_for_mod
@@ -92,6 +96,30 @@ class SearchMethod(Enum):
     @staticmethod
     def __add_spaces_from_dictionary(text: str):
         """Add spaces between words based on the english dictionary."""
+        try:
+            enchant.Dict("en_US")
+        except enchant.errors.DictNotFoundError:
+            if "win" in sys.platform:
+                # On Windows, download the dictionary and add it to the enchant directory
+                data_path = os.path.join(os.path.dirname(inspect.getfile(enchant)), "data")
+                dicts_path = os.path.join(
+                    data_path,
+                    [p for p in os.listdir(data_path) if p.startswith("mingw")][0],
+                    "share", "enchant", "hunspell"
+                )
+                with open(f"{dicts_path}/en_US.dic", "xb") as f:
+                    f.write(
+                        requests.get("https://cgit.freedesktop.org/libreoffice/dictionaries/tree/en/en_US.dic").content
+                    )
+                with open(f"{dicts_path}/en_US.aff", "xb") as f:
+                    f.write(
+                        requests.get("https://cgit.freedesktop.org/libreoffice/dictionaries/tree/en/en_US.aff").content
+                    )
+            else:
+                print("The english dictionary is not installed. Please install"
+                      "`hunspell-en` or `en-hunspell` using your package manager.")
+                exit(1)
+
         d = enchant.Dict("en_US")
         new_text = ""
         worked_on_word = text

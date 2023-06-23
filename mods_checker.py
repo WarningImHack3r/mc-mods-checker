@@ -151,7 +151,18 @@ if __name__ == "__main__":
         leave(True, "Please create a .env file and set the CURSEFORGE_API_KEY")
 
     # Start the script
-    with contextlib.chdir(f"{os.getenv('APPDATA')}/.minecraft/mods"):
+    match sys.platform:
+        case "win32" | "cygwin":
+            mods_folder = f"{os.getenv('APPDATA')}/.minecraft/mods"
+        case "darwin":
+            mods_folder = f"{os.getenv('HOME')}/Library/Application Support/minecraft/mods"
+        case "linux":
+            mods_folder = f"{os.getenv('HOME')}/.minecraft/mods"
+        case _:
+            mods_folder = None
+            leave(True, f"Unsupported platform: {sys.platform}")
+
+    with contextlib.chdir(mods_folder):
         mods = [mod for mod in os.listdir() if os.path.isfile(mod)]
         if not mods:
             leave(True, "No mods found in the mods folder")
@@ -204,7 +215,7 @@ if __name__ == "__main__":
             first_numbered_word = next(element for element in split_mod if any(char.isdigit() for char in element))
             first_words_before_number = split_mod[:split_mod.index(first_numbered_word)]
             query_without_loader = first_words_before_number[:-1] \
-                if first_words_before_number[-1] in ["fabric", "forge"] \
+                if len(first_words_before_number) > 0 and first_words_before_number[-1] in ["fabric", "forge"] \
                 else first_words_before_number
             search_query = " ".join(query_without_loader)
 

@@ -16,7 +16,7 @@ from send2trash import send2trash
 from curseforge_api import get_minecraft_versions
 from utils import Color, ModLoader, SearchMethod, SearchWebsite
 
-VERSION = "1.1.3"
+VERSION = "1.1.4"
 
 
 def diff_between_files(file1: str, file2: str) -> dict:
@@ -137,9 +137,10 @@ def leave(error: bool = False, message: str = None, silent: bool = False):
 
 if __name__ == "__main__":
     # Check if the CURSEFORGE_API_KEY exists in .env
-    if os.path.exists(".env"):
+    env_path = os.path.join(os.path.dirname(sys.argv[0]), ".env")
+    if os.path.exists(env_path):
         env_key_found = False
-        for line in open(".env"):
+        for line in open(env_path):
             if line.startswith("CURSEFORGE_API_KEY"):
                 env_key_found = True
                 if not line.split("=")[1].strip():

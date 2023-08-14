@@ -39,6 +39,9 @@ $ python3 mods_checker.py
 
 ## TODO
 - [ ] Change mod online detection mechanism to use current mod version instead of target version
+- [ ] Fetch changelogs
 - [ ] Only work with Modrinth if no API key is provided
 - [ ] Auto install Fabric option (with `.jar` version & `java -jar fabric-installer.jar client -dir "/path/to/.minecraft"`)
-- [ ] Add auto-update feature
+- [ ] Add auto self-update feature
+- [ ] Exit if no `.minecraft` or no `mods` folders exist
+- [ ] Check Fabric Installer version every time
